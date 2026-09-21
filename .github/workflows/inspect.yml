@@ -18,7 +18,7 @@ jobs:
           import base64,gzip,re
           s=''.join(Path(f'app/part{i}.txt').read_text().strip() for i in range(7))
           html=gzip.decompress(base64.b64decode(s,validate=True)).decode('utf-8')
-          pats=['g_hist','hist.push','function finish','finishWorkout','g_next','g_active','RIR','localStorage.setItem','showHistory','renderHistory']
+          pats=['function suggest','suggest(','function progression','last(id','lastEntry','progression','Sugestão','g_hist','function finish']
           for p in pats:
               print('\n###',p)
               for m in list(re.finditer(re.escape(p),html,re.I))[:12]:
