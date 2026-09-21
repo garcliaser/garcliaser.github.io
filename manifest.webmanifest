@@ -1,0 +1,12 @@
+{
+  "name":"Treino 3x — Garcia",
+  "short_name":"Treino 3x",
+  "description":"Ficha de treino 3x com histórico, progressão e sincronização na nuvem.",
+  "lang":"pt-BR",
+  "start_url":"/?pwa=1",
+  "scope":"/",
+  "display":"standalone",
+  "background_color":"#07101d",
+  "theme_color":"#07101d",
+  "icons":[{"src":"/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]
+}
