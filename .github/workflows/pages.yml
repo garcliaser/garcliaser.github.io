@@ -19,12 +19,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Montar ficha final e indicador de nuvem
+      - name: Validar melhorias
+        run: node --check extras/enhancements.js
+      - name: Montar ficha final
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
-          import base64, gzip, re
+          import base64, gzip, re, shutil, struct, zlib
 
           api = "https://xvebkbtfvvcjmzjjxysk.supabase.co/functions/v1/treino-garcia-api"
           parts = [Path(f"app/part{i}.txt").read_text(encoding="utf-8").strip() for i in range(7)]
@@ -39,7 +41,25 @@ jobs:
               count=1
           )
           if n != 1:
-              raise SystemExit("CLOUD_ENDPOINT não encontrado na ficha")
+              raise SystemExit("CLOUD_ENDPOINT não encontrado")
+
+          marker = "function last(id,n=1){return lastEntry(id,n)?.exercise||null}"
+          progress = """function progressLast(id,n=1){let h=histFor(cur),a=[];for(let i=h.length-1;i>=0;i--){if(!h[i]?.fatigueMode&&h[i]?.exercises?.[id])a.push(h[i].exercises[id]);if(a.length>=n)break}return a[n-1]||null}"""
+          if marker not in html:
+              raise SystemExit("Marcador last() não encontrado")
+          html = html.replace(marker, marker + progress, 1)
+
+          replacements = {
+            "function lastKg(id){let e=last(id);": "function lastKg(id){let e=progressLast(id);",
+            "function suggestionInfo(ex){let a=last(ex.id,1),b=last(ex.id,2),u=unit(ex);":
+              "function suggestionInfo(ex){let a=progressLast(ex.id,1),b=progressLast(ex.id,2),u=unit(ex);",
+            "function status(ex){let a=last(ex.id,1),b=last(ex.id,2),c=last(ex.id,3);":
+              "function status(ex){let a=progressLast(ex.id,1),b=progressLast(ex.id,2),c=progressLast(ex.id,3);"
+          }
+          for old,new in replacements.items():
+              if old not in html:
+                  raise SystemExit("Trecho de progressão não encontrado: " + old[:40])
+              html = html.replace(old,new,1)
 
           cloud_ui = r'''
           <style id="cloudSyncUiStyle">
@@ -64,7 +84,6 @@ jobs:
             const LAST_KEY = "g_cloud_ui_last_sync";
             const nativeFetch = window.fetch.bind(window);
             let pending = {state:"checking", text:"☁️ Verificando nuvem…"};
-
             function ensureBadge(){
               let el = document.getElementById("cloudSyncBadge");
               if(!el && document.body){
@@ -73,91 +92,73 @@ jobs:
                 el.setAttribute("aria-live","polite");
                 document.body.appendChild(el);
               }
-              if(el){
-                el.dataset.state = pending.state;
-                el.textContent = pending.text;
-                el.title = "Status do salvamento do histórico na nuvem";
-              }
+              if(el){el.dataset.state=pending.state;el.textContent=pending.text;el.title="Status do salvamento do histórico na nuvem"}
               return el;
             }
-            function show(state,text){
-              pending={state,text};
-              ensureBadge();
-            }
-            function hhmm(iso){
-              const d = iso ? new Date(iso) : new Date();
-              return d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
-            }
-            function markSynced(){
-              const iso = new Date().toISOString();
-              try{ localStorage.setItem(LAST_KEY, iso); }catch(_){}
-              show("ok","☁️ Sincronizado às " + hhmm(iso));
-            }
-            function parseAction(init){
+            function show(state,text){pending={state,text};ensureBadge()}
+            function hhmm(iso){const d=iso?new Date(iso):new Date();return d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}
+            function markSynced(){const iso=new Date().toISOString();try{localStorage.setItem(LAST_KEY,iso)}catch(_){}show("ok","☁️ Sincronizado às "+hhmm(iso))}
+            function parseAction(init){try{if(!init||!init.body)return"";const obj=typeof init.body==="string"?JSON.parse(init.body):null;return obj&&obj.action?obj.action:""}catch(_){return""}}
+            window.fetch=async function(input,init){
+              const url=typeof input==="string"?input:(input&&input.url?input.url:""),cloud=url.indexOf(API)===0,action=cloud?parseAction(init):"";
+              if(cloud){if(action==="push")show("saving","⏳ Salvando na nuvem…");else if(action==="pull")show("checking","☁️ Sincronizando…")}
               try{
-                if(!init || !init.body) return "";
-                const obj = typeof init.body === "string" ? JSON.parse(init.body) : null;
-                return obj && obj.action ? obj.action : "";
-              }catch(_){ return ""; }
-            }
-
-            window.fetch = async function(input, init){
-              const url = typeof input === "string" ? input : (input && input.url ? input.url : "");
-              const cloud = url.indexOf(API) === 0;
-              const action = cloud ? parseAction(init) : "";
-              if(cloud){
-                if(action === "push") show("saving","⏳ Salvando na nuvem…");
-                else if(action === "pull") show("checking","☁️ Sincronizando…");
-              }
-              try{
-                const response = await nativeFetch(input, init);
-                if(cloud){
-                  if(response.ok){
-                    if(action === "push") markSynced();
-                    else {
-                      let last = "";
-                      try{ last = localStorage.getItem(LAST_KEY) || ""; }catch(_){}
-                      show("ok", last ? "☁️ Sincronizado às " + hhmm(last) : "☁️ Nuvem conectada");
-                    }
-                  }else{
-                    show("err","⚠️ Não sincronizado");
-                  }
-                }
+                const response=await nativeFetch(input,init);
+                if(cloud){if(response.ok){if(action==="push")markSynced();else{let last="";try{last=localStorage.getItem(LAST_KEY)||""}catch(_){}show("ok",last?"☁️ Sincronizado às "+hhmm(last):"☁️ Nuvem conectada")}}else show("err","⚠️ Não sincronizado")}
                 return response;
-              }catch(err){
-                if(cloud){
-                  show(navigator.onLine ? "err" : "offline",
-                       navigator.onLine ? "⚠️ Não sincronizado" : "⚠️ Sem internet — salvo no aparelho");
-                }
-                throw err;
-              }
+              }catch(err){if(cloud)show(navigator.onLine?"err":"offline",navigator.onLine?"⚠️ Não sincronizado":"⚠️ Sem internet — salvo no aparelho");throw err}
             };
-
             window.addEventListener("offline",()=>show("offline","⚠️ Sem internet — salvo no aparelho"));
             window.addEventListener("online",()=>show("checking","☁️ Internet voltou — sincronizando…"));
-
-            document.addEventListener("DOMContentLoaded",()=>{
-              ensureBadge();
-              if(!navigator.onLine){
-                show("offline","⚠️ Sem internet — salvo no aparelho");
-                return;
-              }
-              let last="";
-              try{ last=localStorage.getItem(LAST_KEY)||""; }catch(_){}
-              show(last ? "ok" : "checking",
-                   last ? "☁️ Sincronizado às " + hhmm(last) : "☁️ Verificando nuvem…");
-            });
+            document.addEventListener("DOMContentLoaded",()=>{ensureBadge();if(!navigator.onLine){show("offline","⚠️ Sem internet — salvo no aparelho");return}let last="";try{last=localStorage.getItem(LAST_KEY)||""}catch(_){}show(last?"ok":"checking",last?"☁️ Sincronizado às "+hhmm(last):"☁️ Verificando nuvem…")});
           })();
           </script>
           '''
 
-          if "</head>" not in html:
-              raise SystemExit("</head> não encontrado")
-          html = html.replace("</head>", cloud_ui + "\n</head>", 1)
+          head_extra = '''<link rel="manifest" href="/manifest.webmanifest">
+          <link rel="apple-touch-icon" href="/icon-192.png">
+          <meta name="apple-mobile-web-app-capable" content="yes">
+          <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+          <link rel="stylesheet" href="/extras/enhancements.css?v=10">'''
+
+          if "</head>" not in html or "</body>" not in html:
+              raise SystemExit("HTML base incompleto")
+          html = html.replace("</head>", head_extra + "\n" + cloud_ui + "\n</head>", 1)
+          html = html.replace("</body>", '<script src="/extras/enhancements.js?v=10"></script>\n</body>', 1)
 
           out = Path("_site")
-          out.mkdir(exist_ok=True)
-          (out / "index.html").write_text(html, encoding="utf-8")
+          if out.exists(): shutil.rmtree(out)
+          out.mkdir()
+          (out/"extras").mkdir()
+          (out/"index.html").write_text(html, encoding="utf-8")
+          shutil.copy("extras/enhancements.js", out/"extras/enhancements.js")
+          shutil.copy("extras/enhancements.css", out/"extras/enhancements.css")
+          shutil.copy("extras/manifest.webmanifest", out/"manifest.webmanifest")
+          shutil.copy("extras/service-worker.js", out/"service-worker.js")
+
+          def png_icon(size,path):
+              bg=(7,16,29); fg=(238,246,255); ac=(37,91,153)
+              pix=[list(bg) for _ in range(size*size)]
+              def rect(x0,y0,x1,y1,col):
+                  x0=max(0,int(x0));y0=max(0,int(y0));x1=min(size,int(x1));y1=min(size,int(y1))
+                  for y in range(y0,y1):
+                      off=y*size
+                      for x in range(x0,x1): pix[off+x]=list(col)
+              rect(size*.18,size*.18,size*.82,size*.82,ac)
+              rect(size*.23,size*.46,size*.77,size*.54,fg)
+              rect(size*.18,size*.34,size*.28,size*.66,fg)
+              rect(size*.72,size*.34,size*.82,size*.66,fg)
+              rect(size*.12,size*.39,size*.19,size*.61,fg)
+              rect(size*.81,size*.39,size*.88,size*.61,fg)
+              rawb=b''.join(b'\x00'+bytes(sum((p for p in pix[y*size:(y+1)*size]),[])) for y in range(size))
+              def chunk(t,d): return struct.pack(">I",len(d))+t+d+struct.pack(">I",zlib.crc32(t+d)&0xffffffff)
+              data=b'\x89PNG\r\n\x1a\n'+chunk(b'IHDR',struct.pack(">IIBBBBB",size,size,8,2,0,0,0))+chunk(b'IDAT',zlib.compress(rawb,9))+chunk(b'IEND',b'')
+              Path(path).write_bytes(data)
+          png_icon(192,out/"icon-192.png")
+          png_icon(512,out/"icon-512.png")
+
+          if "progressLast(" not in html or "enhancements.js" not in html:
+              raise SystemExit("Validação final falhou")
           print("Ficha final gerada:", len(html), "caracteres")
           PY
       - name: Configurar Pages
