@@ -5,6 +5,33 @@ const nativeSet=Storage.prototype.setItem;
 const nativeGet=Storage.prototype.getItem;
 const nativeRemove=Storage.prototype.removeItem;
 let installPrompt=null;
+const gxNativeFetch=window.fetch.bind(window);
+let gxCloudVisual={state:'checking',text:'☁️ Verificando nuvem…'};
+function ensureCloudBadge(){
+ let e=document.getElementById('cloudSyncBadge');
+ if(!e&&document.body){e=document.createElement('div');e.id='cloudSyncBadge';e.setAttribute('aria-live','polite');document.body.appendChild(e)}
+ if(e){e.dataset.state=gxCloudVisual.state;e.textContent=gxCloudVisual.text;e.title='Status do salvamento do histórico na nuvem'}
+ return e;
+}
+function cloudShow(state,text){gxCloudVisual={state,text};ensureCloudBadge()}
+function cloudTime(iso){return new Date(iso||Date.now()).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}
+function cloudAction(init){try{const o=init?.body&&typeof init.body==='string'?JSON.parse(init.body):null;return o?.action||''}catch(_){return''}}
+window.fetch=async function(input,init){
+ const url=typeof input==='string'?input:(input?.url||''),isCloud=url.indexOf(API)===0,action=isCloud?cloudAction(init):'';
+ if(isCloud){if(action==='push')cloudShow('saving','⏳ Salvando na nuvem…');else if(action==='pull')cloudShow('checking','☁️ Sincronizando…')}
+ try{
+  const r=await gxNativeFetch(input,init);
+  if(isCloud){
+   if(r.ok){
+    if(action==='push'){const iso=setLastSync();cloudShow('ok','☁️ Sincronizado às '+cloudTime(iso))}
+    else{const ls=lastSync();cloudShow('ok',ls?'☁️ Sincronizado às '+cloudTime(ls):'☁️ Nuvem conectada')}
+   }else cloudShow('err','⚠️ Não sincronizado');
+  }
+  return r;
+ }catch(e){if(isCloud)cloudShow(navigator.onLine?'err':'offline',navigator.onLine?'⚠️ Não sincronizado':'⚠️ Sem internet — salvo no aparelho');throw e}
+};
+window.addEventListener('offline',()=>cloudShow('offline','⚠️ Sem internet — salvo no aparelho'));
+window.addEventListener('online',()=>cloudShow('checking','☁️ Internet voltou — sincronizando…'));
 
 function n(v){const x=parseFloat(String(v??'').replace(',','.'));return Number.isFinite(x)?x:null}
 function f(v,d=1){return v==null?'—':Number(v).toLocaleString('pt-BR',{maximumFractionDigits:d})}
@@ -183,7 +210,8 @@ Storage.prototype.setItem=function(key,value){
 };
 
 function init(){
- injectBase();
+ injectBase();ensureCloudBadge();
+ if(!navigator.onLine)cloudShow('offline','⚠️ Sem internet — salvo no aparelho');else{const ls=lastSync();cloudShow(ls?'ok':'checking',ls?'☁️ Sincronizado às '+cloudTime(ls):'☁️ Verificando nuvem…')}
  if('serviceWorker'in navigator)navigator.serviceWorker.register('/service-worker.js').catch(()=>{});
  setInterval(()=>{const b=document.getElementById('gxPanelBtn');if(!b)injectBase();showFatigueBanner()},15000);
 }
