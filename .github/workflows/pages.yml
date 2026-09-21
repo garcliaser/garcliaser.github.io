@@ -19,6 +19,147 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Montar ficha final e indicador de nuvem
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import base64, gzip, re
+
+          api = "https://xvebkbtfvvcjmzjjxysk.supabase.co/functions/v1/treino-garcia-api"
+          parts = [Path(f"app/part{i}.txt").read_text(encoding="utf-8").strip() for i in range(7)]
+          packed = "".join(parts)
+          raw = base64.b64decode(packed, validate=True)
+          html = gzip.decompress(raw).decode("utf-8")
+
+          html, n = re.subn(
+              r"const\s+CLOUD_ENDPOINT\s*=\s*[^;]+;",
+              "const CLOUD_ENDPOINT='" + api + "';",
+              html,
+              count=1
+          )
+          if n != 1:
+              raise SystemExit("CLOUD_ENDPOINT não encontrado na ficha")
+
+          cloud_ui = r'''
+          <style id="cloudSyncUiStyle">
+            #cloudSyncBadge{
+              position:fixed;right:12px;bottom:88px;z-index:999999;
+              max-width:min(82vw,320px);padding:9px 12px;border-radius:999px;
+              font:700 13px/1.2 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+              color:#eef6ff;background:rgba(20,39,61,.96);
+              border:1px solid rgba(126,163,204,.45);
+              box-shadow:0 8px 24px rgba(0,0,0,.32);
+              backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+              transition:.2s ease;cursor:default;user-select:none
+            }
+            #cloudSyncBadge[data-state="ok"]{border-color:rgba(83,190,124,.75)}
+            #cloudSyncBadge[data-state="saving"],#cloudSyncBadge[data-state="checking"]{border-color:rgba(255,194,67,.75)}
+            #cloudSyncBadge[data-state="err"],#cloudSyncBadge[data-state="offline"]{border-color:rgba(255,100,100,.8)}
+            @media(max-width:520px){#cloudSyncBadge{right:10px;bottom:82px;font-size:12px;padding:8px 10px}}
+          </style>
+          <script id="cloudSyncUiScript">
+          (() => {
+            const API = "https://xvebkbtfvvcjmzjjxysk.supabase.co/functions/v1/treino-garcia-api";
+            const LAST_KEY = "g_cloud_ui_last_sync";
+            const nativeFetch = window.fetch.bind(window);
+            let pending = {state:"checking", text:"☁️ Verificando nuvem…"};
+
+            function ensureBadge(){
+              let el = document.getElementById("cloudSyncBadge");
+              if(!el && document.body){
+                el = document.createElement("div");
+                el.id = "cloudSyncBadge";
+                el.setAttribute("aria-live","polite");
+                document.body.appendChild(el);
+              }
+              if(el){
+                el.dataset.state = pending.state;
+                el.textContent = pending.text;
+                el.title = "Status do salvamento do histórico na nuvem";
+              }
+              return el;
+            }
+            function show(state,text){
+              pending={state,text};
+              ensureBadge();
+            }
+            function hhmm(iso){
+              const d = iso ? new Date(iso) : new Date();
+              return d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+            }
+            function markSynced(){
+              const iso = new Date().toISOString();
+              try{ localStorage.setItem(LAST_KEY, iso); }catch(_){}
+              show("ok","☁️ Sincronizado às " + hhmm(iso));
+            }
+            function parseAction(init){
+              try{
+                if(!init || !init.body) return "";
+                const obj = typeof init.body === "string" ? JSON.parse(init.body) : null;
+                return obj && obj.action ? obj.action : "";
+              }catch(_){ return ""; }
+            }
+
+            window.fetch = async function(input, init){
+              const url = typeof input === "string" ? input : (input && input.url ? input.url : "");
+              const cloud = url.indexOf(API) === 0;
+              const action = cloud ? parseAction(init) : "";
+              if(cloud){
+                if(action === "push") show("saving","⏳ Salvando na nuvem…");
+                else if(action === "pull") show("checking","☁️ Sincronizando…");
+              }
+              try{
+                const response = await nativeFetch(input, init);
+                if(cloud){
+                  if(response.ok){
+                    if(action === "push") markSynced();
+                    else {
+                      let last = "";
+                      try{ last = localStorage.getItem(LAST_KEY) || ""; }catch(_){}
+                      show("ok", last ? "☁️ Sincronizado às " + hhmm(last) : "☁️ Nuvem conectada");
+                    }
+                  }else{
+                    show("err","⚠️ Não sincronizado");
+                  }
+                }
+                return response;
+              }catch(err){
+                if(cloud){
+                  show(navigator.onLine ? "err" : "offline",
+                       navigator.onLine ? "⚠️ Não sincronizado" : "⚠️ Sem internet — salvo no aparelho");
+                }
+                throw err;
+              }
+            };
+
+            window.addEventListener("offline",()=>show("offline","⚠️ Sem internet — salvo no aparelho"));
+            window.addEventListener("online",()=>show("checking","☁️ Internet voltou — sincronizando…"));
+
+            document.addEventListener("DOMContentLoaded",()=>{
+              ensureBadge();
+              if(!navigator.onLine){
+                show("offline","⚠️ Sem internet — salvo no aparelho");
+                return;
+              }
+              let last="";
+              try{ last=localStorage.getItem(LAST_KEY)||""; }catch(_){}
+              show(last ? "ok" : "checking",
+                   last ? "☁️ Sincronizado às " + hhmm(last) : "☁️ Verificando nuvem…");
+            });
+          })();
+          </script>
+          '''
+
+          if "</head>" not in html:
+              raise SystemExit("</head> não encontrado")
+          html = html.replace("</head>", cloud_ui + "\n</head>", 1)
+
+          out = Path("_site")
+          out.mkdir(exist_ok=True)
+          (out / "index.html").write_text(html, encoding="utf-8")
+          print("Ficha final gerada:", len(html), "caracteres")
+          PY
       - name: Configurar Pages
         uses: actions/configure-pages@v5
         with:
@@ -26,7 +167,7 @@ jobs:
       - name: Empacotar site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: "."
+          path: "_site"
       - name: Publicar
         id: deployment
         uses: actions/deploy-pages@v4
