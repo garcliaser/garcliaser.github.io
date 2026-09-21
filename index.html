@@ -17,7 +17,7 @@ body{display:grid;place-items:center;min-height:100vh}
 (async()=>{
   try{
     if(!("DecompressionStream" in window)) throw new Error("Atualize o navegador para abrir a ficha.");
-    const urls=Array.from({length:7},(_,i)=>'app/part'+i+'.txt?v=8');
+    const urls=Array.from({length:7},(_,i)=>'app/part'+i+'.txt?v=11');
     const parts=await Promise.all(urls.map(async u=>{
       const r=await fetch(u,{cache:'no-store'});
       if(!r.ok) throw new Error('Falha ao carregar '+u+' ('+r.status+')');
@@ -26,8 +26,23 @@ body{display:grid;place-items:center;min-height:100vh}
     const b64=parts.join('');
     const bin=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
     const ds=new DecompressionStream('gzip');
-    const html=await new Response(new Blob([bin]).stream().pipeThrough(ds)).text();
-    document.open(); document.write(html); document.close();
+    let html=await new Response(new Blob([bin]).stream().pipeThrough(ds)).text();
+
+    html=html.replace(/const\s+CLOUD_ENDPOINT\s*=\s*[^;]+;/,
+      "const CLOUD_ENDPOINT='https://xvebkbtfvvcjmzjjxysk.supabase.co/functions/v1/treino-garcia-api';");
+
+    const marker="function last(id,n=1){return lastEntry(id,n)?.exercise||null}";
+    const progress="function progressLast(id,n=1){let h=histFor(cur),a=[];for(let i=h.length-1;i>=0;i--){if(!h[i]?.fatigueMode&&h[i]?.exercises?.[id])a.push(h[i].exercises[id]);if(a.length>=n)break}return a[n-1]||null}";
+    if(!html.includes(marker))throw new Error("Falha ao preparar a lógica de progressão.");
+    html=html.replace(marker,marker+progress);
+    html=html.replace("function lastKg(id){let e=last(id);","function lastKg(id){let e=progressLast(id);");
+    html=html.replace("function suggestionInfo(ex){let a=last(ex.id,1),b=last(ex.id,2),u=unit(ex);","function suggestionInfo(ex){let a=progressLast(ex.id,1),b=progressLast(ex.id,2),u=unit(ex);");
+    html=html.replace("function status(ex){let a=last(ex.id,1),b=last(ex.id,2),c=last(ex.id,3);","function status(ex){let a=progressLast(ex.id,1),b=progressLast(ex.id,2),c=progressLast(ex.id,3);");
+
+    const head='<link rel="manifest" href="/manifest.webmanifest?v=11"><link rel="apple-touch-icon" href="/icon.svg"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="/extras/enhancements.css?v=11">';
+    html=html.replace('</head>',head+'</head>');
+    html=html.replace('</body>','<script src="/extras/enhancements.js?v=11"><\/script></body>');
+    document.open();document.write(html);document.close();
   }catch(e){
     document.body.innerHTML='<div class="box"><div style="font-size:38px">⚠️</div><b>Falha ao carregar a ficha.</b><div class="muted">'+String(e)+'</div></div>';
   }
