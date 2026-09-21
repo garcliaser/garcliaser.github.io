@@ -1,0 +1,14 @@
+name: Limpar deploy antigo
+on:
+  push:
+    branches: ["main"]
+permissions:
+  contents: read
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  clear:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Liberando a fila do GitHub Pages"
