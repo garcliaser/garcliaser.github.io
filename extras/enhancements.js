@@ -4,6 +4,28 @@ const API='https://xvebkbtfvvcjmzjjxysk.supabase.co/functions/v1/treino-garcia-a
 const nativeSet=Storage.prototype.setItem;
 const nativeGet=Storage.prototype.getItem;
 const nativeRemove=Storage.prototype.removeItem;
+const gxDurationFixDate='2026-09-23T21:49:40.985Z';
+function gxCorrectFirstDuration(value){
+ try{
+  if(typeof value!=='string'||!value.includes(gxDurationFixDate))return value;
+  const list=JSON.parse(value);if(!Array.isArray(list))return value;
+  let change=false;
+  for(const session of list){
+   if(session?.date===gxDurationFixDate&&Number(session.duration)>=11018000&&Number(session.duration)<=11024000){
+    session.duration=4200000;change=true;
+   }
+  }
+  return change?JSON.stringify(list):value;
+ }catch(_){return value}
+}
+try{
+ const originalHistory=localStorage.getItem('g_hist_A');
+ if(originalHistory!=null){
+  const correctedHistory=gxCorrectFirstDuration(originalHistory);
+  if(originalHistory!==correctedHistory)nativeSet.call(localStorage,'g_hist_A',correctedHistory);
+ }
+}catch(_){}
+
 let installPrompt=null;
 const gxNativeFetch=window.fetch.bind(window);
 let gxCloudVisual={state:'checking',text:'☁️ Verificando nuvem…'};
@@ -181,6 +203,7 @@ function showSummary(w,s){
 
 Storage.prototype.setItem=function(key,value){
  key=String(key);
+ if(key==='g_hist_A')value=gxCorrectFirstDuration(String(value));
  const hm=key.match(/^g_hist_([ABC])$/);
  let summary=null;
  if(hm){
