@@ -1,4 +1,4 @@
-const CACHE='treino3x-static-v12';
+const CACHE='treino3x-static-v14';
 const CORE=['/','/manifest.webmanifest','/icon.svg','/extras/enhancements.css','/extras/enhancements.js','/app/part0.txt','/app/part1.txt','/app/part2.txt','/app/part3.txt','/app/part4.txt','/app/part5.txt','/app/part6.txt'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
