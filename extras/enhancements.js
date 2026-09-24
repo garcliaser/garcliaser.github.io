@@ -38,6 +38,23 @@ function ensureCloudBadge(){
 function cloudShow(state,text){gxCloudVisual={state,text};ensureCloudBadge()}
 function cloudTime(iso){return new Date(iso||Date.now()).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}
 function cloudAction(init){try{const o=init?.body&&typeof init.body==='string'?JSON.parse(init.body):null;return o?.action||''}catch(_){return''}}
+function gxApplyServerDurationCorrection(response){
+ try{
+  return response.clone().json().then(payload=>{
+   const raw=payload?.state?.g_hist_A;
+   if(typeof raw!=='string'||!raw.includes(gxDurationFixDate))return;
+   const list=JSON.parse(raw);
+   const match=Array.isArray(list)&&list.find(s=>s?.date===gxDurationFixDate);
+   if(match&&Number(match.duration)===4200000){
+    const local=nativeGet.call(localStorage,'g_hist_A');
+    if(local!==raw){
+     nativeSet.call(localStorage,'g_hist_A',raw);
+     setTimeout(()=>{try{if(typeof render==='function')render()}catch(_){}},0);
+    }
+   }
+  }).catch(()=>{});
+ }catch(_){return Promise.resolve()}
+}
 window.fetch=async function(input,init){
  const url=typeof input==='string'?input:(input?.url||''),isCloud=url.indexOf(API)===0,action=isCloud?cloudAction(init):'';
  if(isCloud){if(action==='push')cloudShow('saving','⏳ Salvando na nuvem…');else if(action==='pull')cloudShow('checking','☁️ Sincronizando…')}
@@ -45,6 +62,7 @@ window.fetch=async function(input,init){
   const r=await gxNativeFetch(input,init);
   if(isCloud){
    if(r.ok){
+    await gxApplyServerDurationCorrection(r);
     if(action==='push'){const iso=setLastSync();cloudShow('ok','☁️ Sincronizado às '+cloudTime(iso))}
     else{const ls=lastSync();cloudShow('ok',ls?'☁️ Sincronizado às '+cloudTime(ls):'☁️ Nuvem conectada')}
    }else cloudShow('err','⚠️ Não sincronizado');
