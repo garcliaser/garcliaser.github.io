@@ -17,7 +17,7 @@ body{display:grid;place-items:center;min-height:100vh}
 (async()=>{
   try{
     if(!("DecompressionStream" in window)) throw new Error("Atualize o navegador para abrir a ficha.");
-    const urls=Array.from({length:7},(_,i)=>'app/part'+i+'.txt?v=14');
+    const urls=Array.from({length:7},(_,i)=>'app/part'+i+'.txt?v=15');
     const parts=await Promise.all(urls.map(async u=>{
       const r=await fetch(u,{cache:'no-store'});
       if(!r.ok) throw new Error('Falha ao carregar '+u+' ('+r.status+')');
@@ -39,9 +39,9 @@ body{display:grid;place-items:center;min-height:100vh}
     html=html.replace("function suggestionInfo(ex){let a=last(ex.id,1),b=last(ex.id,2),u=unit(ex);","function suggestionInfo(ex){let a=progressLast(ex.id,1),b=progressLast(ex.id,2),u=unit(ex);");
     html=html.replace("function status(ex){let a=last(ex.id,1),b=last(ex.id,2),c=last(ex.id,3);","function status(ex){let a=progressLast(ex.id,1),b=progressLast(ex.id,2),c=progressLast(ex.id,3);");
 
-    const head='<link rel="manifest" href="/manifest.webmanifest?v=14"><link rel="apple-touch-icon" href="/icon.svg"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="/extras/enhancements.css?v=14">';
+    const head='<link rel="manifest" href="/manifest.webmanifest?v=15"><link rel="apple-touch-icon" href="/icon.svg"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="stylesheet" href="/extras/enhancements.css?v=15">';
     html=html.replace('</head>',head+'</head>');
-    html=html.replace('</body>','<script src="/extras/enhancements.js?v=14"><\/script></body>');
+    html=html.replace('</body>','<script src="/extras/enhancements.js?v=15"><\/script></body>');
     document.open();document.write(html);document.close();
   }catch(e){
     document.body.innerHTML='<div class="box"><div style="font-size:38px">⚠️</div><b>Falha ao carregar a ficha.</b><div class="muted">'+String(e)+'</div></div>';
